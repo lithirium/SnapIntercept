@@ -8,16 +8,20 @@ import android.os.Environment;
 import android.widget.Toast;
 
 import java.io.BufferedInputStream;
+
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -41,6 +45,7 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
     final String SnapEventIsVideo = "bT_";
     final String SnapEventUsername = "aj";
     final String SnapEventTimestamp = "t";
+    final String SnapEventIsZipped= "ak";
     final String MediaCacheEntryKlass = "kli";
     final String MediaCacheEntryConstructorFirstParam = "lxe";
     final String EncryptionAlgorithmInterface = "com.snapchat.android.framework.crypto.EncryptionAlgorithm";
@@ -65,6 +70,7 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
         public String mUsername;
         public long mTimestamp;
         public boolean mIsVideo;
+        public boolean mIsZipped;
 
     }
 
@@ -104,6 +110,7 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
                 Object snapEvent = param.thisObject;
 
                 boolean isVideo = (boolean)XposedHelpers.callMethod(snapEvent,SnapEventIsVideo);
+                boolean isZipped = (boolean)XposedHelpers.getObjectField(snapEvent,SnapEventIsZipped);
                 String username = (String)XposedHelpers.getObjectField(snapEvent,SnapEventUsername);
                 long timestamp = XposedHelpers.getLongField(snapEvent,SnapEventTimestamp);
 
@@ -113,6 +120,7 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
                 snapInfo.mUsername = username;
                 snapInfo.mTimestamp = timestamp;
                 snapInfo.mIsVideo = isVideo;
+                snapInfo.mIsZipped = isZipped;
 
                 mCacheKeysMap.put(cacheKey, snapInfo);
             }
@@ -163,15 +171,15 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
                             return;
                         }
 
-                        String fileName = generateFileName(snapInfo);
-                        File f = new File(getFileBasePath(snapInfo),fileName);
-
-                        if(f.createNewFile()) {
-                            copyInputStreamToFile(returnedStream, f);
-                            returnedStream.close();
-                            BufferedInputStream fis = new BufferedInputStream(new FileInputStream(f));
-                            param.setResult(fis);
+                        InputStream newStream = null;
+                        if(snapInfo.mIsZipped) {
+                            newStream = saveZipStream(snapInfo,returnedStream);
                         }
+                        else {
+                            newStream = saveStream(snapInfo,returnedStream);
+                        }
+
+                        param.setResult(newStream);
                     }
                 });
         // Hook into the FlashController class and force it to use the physical flash on the front camera
@@ -200,6 +208,57 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
 
 
 
+    }
+
+    public InputStream saveStream(SnapInfo snapInfo, InputStream input) throws Exception {
+        String fileName = generateFileName(snapInfo);
+        File f = new File(getFileBasePath(snapInfo),fileName);
+        boolean fileCreated = f.createNewFile();
+        if(fileCreated) {
+            copyInputStreamToFile(input, f);
+            BufferedInputStream fis = null;
+            IOUtils.closeQuietly(input);
+            fis = new BufferedInputStream(new FileInputStream(f));
+            return fis;
+        }
+        return input;
+    }
+
+    public InputStream saveZipStream(SnapInfo snapInfo, InputStream input) throws Exception {
+        String fileName = generateFileName(snapInfo);
+        File mediaFile = new File(getFileBasePath(snapInfo),fileName);
+
+        boolean fileCreated = mediaFile.createNewFile();
+        if(fileCreated) {
+            // We need to clone the InputStream to memory temporarily so that we can pass on the original
+            // data back
+            ByteArrayOutputStream tempBufferStream = new ByteArrayOutputStream();
+            tempBufferStream.write(input);
+
+            // Create a new input stream from the buffer.
+            input = tempBufferStream.toInputStream();
+
+            // Loop through the file entries in the zip. Handle the special files starting with media~ and overlay~
+            ZipInputStream zipStream = new ZipInputStream(input);
+            while (true) {
+                ZipEntry nextEntry = zipStream.getNextEntry();
+                if (nextEntry == null) {
+                    break;
+                }
+                String name = nextEntry.getName();
+                if (name.startsWith("media~")) {
+                    copyInputStreamToFile(zipStream, mediaFile);
+                } else if (name.startsWith("overlay~")) {
+                    File overlayFile = new File(getFileBasePath(snapInfo),fileName+"_overlay.jpg");
+                    copyInputStreamToFile(zipStream, overlayFile);
+                }
+            }
+
+            IOUtils.closeQuietly(input);
+            // return an InputStream to the original data
+            return tempBufferStream.toInputStream();
+        }
+        return input;
     }
 
     public File getFileBasePath(SnapInfo snapInfo) {
@@ -252,26 +311,13 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
 
         try {
             out = new FileOutputStream(file);
-            byte[] buf = new byte[1024];
-            int len;
-            while((len=in.read(buf))>0){
-                out.write(buf,0,len);
-            }
+            IOUtils.copy(in,out);
         }
         catch (Exception e) {
             e.printStackTrace();
         }
         finally {
-            // Ensure that the InputStreams are closed even if there's an exception.
-            try {
-                if ( out != null ) {
-                    out.flush();
-                    out.close();
-                }
-            }
-            catch ( IOException e ) {
-                e.printStackTrace();
-            }
+            IOUtils.closeQuietly(out);
         }
     }
 }
