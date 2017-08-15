@@ -36,27 +36,27 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
     private boolean mFrontCameraHasFlash;
     public static ConcurrentHashMap<String, Object> mCacheKeysMap = new ConcurrentHashMap();
 
-    final int VersionCode = 1169;
-    final String ExpectedVersion = "10.14.1.0";
-    final String SnapEventKlass = "kfg";
-    final String SnapEventGetCacheKey = "L";
+    final int VersionCode = 1173;
+    final String ExpectedVersion = "10.15.0.0";
+    final String SnapEventKlass = "kou";
+    final String SnapEventGetCacheKey = "K";
     final String CbcEncryptionAlgorithmKlass = "com.snapchat.android.framework.crypto.CbcEncryptionAlgorithm";
     final String CbcEncryptionAlgorithmDecrypt = "b";
-    final String SnapEventIsVideo = "bT_";
-    final String SnapEventUsername = "aj";
+    final String SnapEventIsVideo = "bV_";
+    final String SnapEventUsername = "ak";
     final String SnapEventTimestamp = "t";
-    final String SnapEventIsZipped= "ak";
-    final String MediaCacheEntryKlass = "kli";
-    final String MediaCacheEntryConstructorFirstParam = "lxe";
+    final String SnapEventIsZipped= "al";
+    final String MediaCacheEntryKlass = "ktc";
+    final String MediaCacheEntryConstructorFirstParam = "mjg";
     final String EncryptionAlgorithmInterface = "com.snapchat.android.framework.crypto.EncryptionAlgorithm";
-    final String RootDetectorKlass = "cit";
+    final String RootDetectorKlass = "lps";
     final String RootDetectorFirst = "b";
     final String RootDetectorSecond = "c";
     final String RootDetectorThird = "d";
     final String RootDetectorForth = "e";
-    final String FlashControllerKlass = "cvv";
+    final String FlashControllerKlass = "cyl";
     final String FlashControllerSetFlash = "a";
-    final String ScFlashModeKlass = "cus";
+    final String ScFlashModeKlass = "cxe";
 
 
     class RootDetectorOverrides extends XC_MethodReplacement {
@@ -87,7 +87,7 @@ public class SnapInterceptLoader implements IXposedHookLoadPackage {
         mContext = (Context) XposedHelpers.callMethod(activityThread, "getSystemContext");
         PackageInfo snapchatPackage = mContext.getPackageManager().getPackageInfo(lpparam.packageName, 0);
         if(snapchatPackage.versionCode != VersionCode) {
-            log("Incorrect version of Snapchat" + lpparam.packageName);
+            log("Wrong APK build. Ensure version "+ExpectedVersion+" is installed.");
             Toast.makeText(mContext,"SnapIntercept: Wrong APK build. Ensure version "+ExpectedVersion+" is installed.",Toast.LENGTH_LONG).show();
             return;
         }
